@@ -193,6 +193,10 @@ if (typeof J$ === 'undefined') {
             } else if (isConstructor) {
                 result = callAsConstructor(f, args);
             } else {
+                if (f === undefined){
+                    // return args.toString();
+                    return 0;
+                }
                 result = Function.prototype.apply.call(f, base, args);
             }
             return result;
@@ -203,7 +207,6 @@ if (typeof J$ === 'undefined') {
 
     function invokeFun(iid, base, f, args, isConstructor, isMethod) {
         var aret, skip = false, result;
-
         if (sandbox.analysis && sandbox.analysis.invokeFunPre) {
             aret = sandbox.analysis.invokeFunPre(iid, f, base, args, isConstructor, isMethod, getPropSafe(f, SPECIAL_PROP_IID), getPropSafe(f, SPECIAL_PROP_SID));
             if (aret) {

@@ -1,0 +1,1 @@
+charcount('footSrchBox','footSrchBtn',3)

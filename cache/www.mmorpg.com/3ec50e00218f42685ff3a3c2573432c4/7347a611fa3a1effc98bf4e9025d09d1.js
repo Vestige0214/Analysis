@@ -1,0 +1,1 @@
+ratingpanels.showPanel(this);
