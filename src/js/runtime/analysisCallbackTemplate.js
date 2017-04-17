@@ -1,54 +1,61 @@
 (function(sandbox) {
     function MyAnalysis() {
         var map = {};
-        var inputs = [];
         var tokenized_inputs = [];
+        var array_of_inputs = [];
         var arrayConstructor = [].constructor;
         var objectConstructor = {}.constructor;
+
         function tokenized_object(key, val, type, level) {
             this.key = key;
             this.val = val;
             this.type = type;
             this.level = level;
         }
+
+        function analysis_object(key, type, count) {
+            this.key = key;
+            this.type = type;
+            this.count = count;
+        }
         //we are ignoring hierarchy and only checking if individual key:val pair is the same
         /**
          *@param {Object} m - input to be tokenized
          *@returns {array: if the json contained valid inputs, null: if json contained invalid value}
          */
-        var tokenize = function(m, level) {
+        var tokenize = function(tokens, m, level) {
                 for (var key in m) {
                     if (m.hasOwnProperty(key)) {
                         if (typeof(m[key]) === 'object') {
-                            if (m[key].constructor === objectConstructor){
+                            if (m[key].constructor === objectConstructor) {
                                 var tokenized_input = new tokenized_object(key, m[key], typeof(m[key]), level);
-                                tokenized_inputs.push(tokenized_input);
+                                tokens.push(tokenized_input);
                                 var recursion_level = level + 1;
-                                tokenize(m[key], recursion_level);
-                            }else if (m[key].constructor === arrayConstructor){
+                                tokenize(tokens, m[key], recursion_level);
+                            } else if (m[key].constructor === arrayConstructor) {
                                 var tokenized_input = new tokenized_object(key, m[key], "array", level);
-                                tokenized_inputs.push(tokenized_input);
+                                tokens.push(tokenized_input);
                             }
                         } else if (!isNaN(m[key])) {
                             m[key] = Number(m[key]);
                             var tokenized_input = new tokenized_object(key, m[key], typeof(m[key]), level);
-                            tokenized_inputs.push(tokenized_input);
+                            tokens.push(tokenized_input);
                         } else if (typeof m[key] === true) {
                             var tokenized_input = new tokenized_object(key, m[key], typeof(m[key]), level);
-                            tokenized_inputs.push(tokenized_input);
+                            tokens.push(tokenized_input);
                         } else if (typeof m[key] === false) {
                             var tokenized_input = new tokenized_object(key, m[key], typeof(m[key]), level);
-                            tokenized_inputs.push(tokenized_input);
+                            tokens.push(tokenized_input);
                         } else if (typeof m[key] === null) {
                             var tokenized_input = new tokenized_object(key, null, null, level);
-                            tokenized_inputs.push(tokenized_input);
+                            tokens.push(tokenized_input);
                         } else if (typeof m[key] === 'string') {
                             var tokenized_input = new tokenized_object(key, m[key], typeof(m[key]), level);
-                            tokenized_inputs.push(tokenized_input);
+                            tokens.push(tokenized_input);
                         }
                     }
                 }
-                return tokenized_inputs;
+                return tokens
             }
             /**
              * @param {number} iid - Static unique instruction identifier of this callback
@@ -71,6 +78,47 @@
              */
         this.invokeFunPre = function(iid, f, base, args, isConstructor, isMethod, functionIid, functionSid) {
             return { f: f, base: base, args: args, skip: false };
+        };
+
+        /**
+         * This callback is called when the execution of a JavaScript file completes
+         *
+         * @param {number} iid - Static unique instruction identifier of this callback
+         * @param {{exception:*} | undefined} wrappedExceptionVal - If this parameter is an object, the script
+         * execution has thrown an uncaught exception and the exception is being stored in the <tt>exception</tt>
+         * property of the parameter
+         * @returns {{wrappedExceptionVal: *, isBacktrack: boolean}} - If an object is returned, then the
+         * actual <tt>wrappedExceptionVal.exception</tt> is replaced with that from the
+         * returned object. If an object is returned and the property <tt>isBacktrack</tt> is set, then the control-flow
+         * returns to the beginning of the script body.  The property
+         * <tt>isBacktrack</tt> can be set to <tt>true</tt> to repeatedly execute the script body as in MultiSE
+         * symbolic execution.
+         */
+
+        this.scriptExit = function(iid, wrappedExceptionVal) {
+            var max_level_all_inputs = 0;
+            var number_of_inputs = array_of_inputs.length;
+            
+            var input_analysis = {};
+            array_of_inputs.forEach(function(input) {
+                if (input['max_level'] > max_level_all_inputs) {
+                    max_level_all_inputs = input['max_level'];
+                }
+            });
+            //Count frequency of token appearing in input
+            array_of_inputs.forEach(function(input) {
+                input['tokens'].forEach(function(tokens) {
+                    if (input_analysis[tokens.key] === undefined) {
+                        input_analysis[tokens.key] = { count: 1, type: tokens.type, level: tokens.level };
+                    } else {
+                        input_analysis[tokens.key].count = input_analysis[tokens.key].count + 1;
+                    }
+                });
+            });
+            input_analysis.forEach(function(analysis){
+                console.log(analysis);
+            });
+            return { wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false };
         };
 
         /**
@@ -100,13 +148,16 @@
             if (f !== undefined) {
                 if (typeof(f) === 'function' && typeof(map[f]) !== 'undefined') {
                     if (map[f] === 'json_parse') {
-                        var tokenized_inputs = [];
-                        inputs.push(args);
+                        var tokens = [];
                         var to_token = JSON.parse(args[0]);
-                        var result = tokenize(to_token, 0);
+                        var result = tokenize(tokens, to_token, 0);
+                        var max_level = 0;
                         result.forEach(function(element) {
-                            console.log(element);
+                            if (max_level < element.level) {
+                                max_level = element.level;
+                            }
                         });
+                        array_of_inputs.push({ 'tokens': result, 'max_level': max_level });
                     }
 
                 }
@@ -359,24 +410,6 @@
          * @param {string} originalFileName - Name of the original script file
          */
         this.scriptEnter = function(iid, instrumentedFileName, originalFileName) {};
-
-        /**
-         * This callback is called when the execution of a JavaScript file completes
-         *
-         * @param {number} iid - Static unique instruction identifier of this callback
-         * @param {{exception:*} | undefined} wrappedExceptionVal - If this parameter is an object, the script
-         * execution has thrown an uncaught exception and the exception is being stored in the <tt>exception</tt>
-         * property of the parameter
-         * @returns {{wrappedExceptionVal: *, isBacktrack: boolean}} - If an object is returned, then the
-         * actual <tt>wrappedExceptionVal.exception</tt> is replaced with that from the
-         * returned object. If an object is returned and the property <tt>isBacktrack</tt> is set, then the control-flow
-         * returns to the beginning of the script body.  The property
-         * <tt>isBacktrack</tt> can be set to <tt>true</tt> to repeatedly execute the script body as in MultiSE
-         * symbolic execution.
-         */
-        this.scriptExit = function(iid, wrappedExceptionVal) {
-            return { wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false };
-        };
 
         /**
          * This callback is called before a binary operation. Binary operations include  +, -, *, /, %, &, |, ^,
