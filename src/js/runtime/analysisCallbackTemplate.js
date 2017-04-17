@@ -18,6 +18,12 @@
             this.type = type;
             this.count = count;
         }
+
+        function json_schema(name, type, optional) {
+            this.name = name;
+            this.type = type;
+            this.optional = optional;
+        }
         //we are ignoring hierarchy and only checking if individual key:val pair is the same
         /**
          *@param {Object} m - input to be tokenized
@@ -94,11 +100,14 @@
          * <tt>isBacktrack</tt> can be set to <tt>true</tt> to repeatedly execute the script body as in MultiSE
          * symbolic execution.
          */
-
+        /*
+         * The algorithm ignores the fact that type could be different
+         */
         this.scriptExit = function(iid, wrappedExceptionVal) {
             var max_level_all_inputs = 0;
             var number_of_inputs = array_of_inputs.length;
-            
+            var mandatory_tokens = [];
+            var results = [];
             var input_analysis = {};
             array_of_inputs.forEach(function(input) {
                 if (input['max_level'] > max_level_all_inputs) {
@@ -109,15 +118,41 @@
             array_of_inputs.forEach(function(input) {
                 input['tokens'].forEach(function(tokens) {
                     if (input_analysis[tokens.key] === undefined) {
-                        input_analysis[tokens.key] = { count: 1, type: tokens.type, level: tokens.level };
+                        input_analysis[tokens.key] = {};
+                        input_analysis[tokens.key][tokens.type] = { count: 1, type: tokens.type, level: tokens.level };
                     } else {
-                        input_analysis[tokens.key].count = input_analysis[tokens.key].count + 1;
+                        if (input_analysis[tokens.key][tokens.type] === undefined) {
+                            input_analysis[tokens.key][tokens.type] = { count: 1, type: tokens.type, level: tokens.level };
+                        } else {
+                            input_analysis[tokens.key][tokens.type].count = input_analysis[tokens.key][tokens.type].count + 1;
+                        }
                     }
                 });
             });
-            input_analysis.forEach(function(analysis){
-                console.log(analysis);
-            });
+            for (var a = 0; a <= max_level_all_inputs; a++){
+                results[a] = [];
+            }
+            for (var a = 0; a <= max_level_all_inputs; a++) {
+                array_of_inputs.forEach(function(input) {
+                    input['tokens'].forEach(function(tokens) {
+                        if (input_analysis[tokens.key][tokens.type].level == a) {
+                            if (input_analysis[tokens.key][tokens.type].count == number_of_inputs) {
+                                var temp = new json_schema(tokens.key, tokens.type, true);
+                                results[a].push(temp);
+                            } else {
+                                var temp = new json_schema(tokens.key, tokens.type, false);
+                                results[a].push(temp);
+                            }
+                        }
+                    });
+                });
+            }
+            for (var a = 0; a <= max_level_all_inputs; a++) {
+                console.log("Level " + a + " has: ");
+                results[a].forEach(function(tokens){
+                    console.log(tokens);
+                });
+            }
             return { wrappedExceptionVal: wrappedExceptionVal, isBacktrack: false };
         };
 
